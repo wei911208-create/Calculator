@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>個人資產配置與加碼試算中心</title>
+    
+    <!-- 引入字體 Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 引入 Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- 引入 SortableJS 支援跨裝置拖曳排序 -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    
+    <!-- 引入 FontAwesome 圖示 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            900: '#1e3a8a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', 'PingFang TC', 'Heiti TC', 'Microsoft JhengHei', sans-serif;
+            background-color: #f8fafc;
+            color: #0f172a;
+        }
+        /* 自訂捲軸 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        /* 隱藏數字輸入框的上下箭頭 */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+        .color-picker-wrapper {
+            position: relative;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid #e2e8f0;
+            cursor: pointer;
+        }
+        .color-picker-wrapper input[type="color"] {
+            position: absolute;
+            top: -10px;
+            left: -10px;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <header class="bg-white shadow-sm sticky top-0 z-10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="bg-brand-100 text-brand-600 p-2 rounded-lg">
+                    <i class="fa-solid fa-chart-pie text-xl"></i>
+                </div>
+                <h1 class="text-xl sm:text-2xl font-bold text-slate-800">資產配置與加碼試算</h1>
+            </div>
+            
+            <div class="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-lg border border-slate-200">
+                <i class="fa-solid fa-money-bill-transfer text-slate-400"></i>
+                <span class="text-sm font-medium text-slate-600">USD/TWD 匯率:</span>
+                <input type="number" id="exchange-rate" value="32.00" step="0.01" 
+                    class="w-20 bg-transparent border-b border-slate-300 focus:border-brand-500 focus:outline-none text-right font-semibold text-brand-600">
+                <button id="refresh-rate" class="text-slate-400 hover:text-brand-500 transition" title="取得最新匯率">
+                    <i class="fa-solid fa-rotate"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            <!-- 左側：資產清單輸入區 -->
+            <div class="lg:col-span-7 space-y-6">
+                <div class="flex justify-between items-end">
+                    <div>
+                        <h2 class="text-lg sm:text-xl font-semibold text-slate-800">我的資產清單</h2>
+                        <p class="text-sm text-slate-500 mt-1">即時編輯名稱、金額，並試算加碼後的比例變化。</p>
+                    </div>
+                    <button id="add-asset-btn" class="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition flex items-center gap-2">
+                        <i class="fa-solid fa-plus"></i>
+                        <span class="hidden sm:inline">新增資產</span>
+                    </button>
+                </div>
+
+                <!-- 資產列表容器 -->
+                <div id="asset-list" class="space-y-4">
+                    <!-- JS 將會在這裡動態渲染資產卡片 -->
+                </div>
+            </div>
+
+            <!-- 右側：統計與圖表儀表板 -->
+            <div class="lg:col-span-5 space-y-6">
+                
+                <!-- 總價值卡片 -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-100">
+                        <p class="text-xs sm:text-sm font-medium text-slate-500 mb-1">目前總資產 (TWD)</p>
+                        <h3 id="current-total" class="text-xl sm:text-3xl font-bold text-slate-800">$0</h3>
+                    </div>
+                    <div class="bg-gradient-to-br from-brand-50 to-white rounded-2xl p-4 sm:p-6 shadow-sm border border-brand-100 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-3 opacity-10 text-brand-600">
+                            <i class="fa-solid fa-rocket text-4xl"></i>
+                        </div>
+                        <p class="text-xs sm:text-sm font-medium text-brand-600 mb-1">加碼後總資產 (TWD)</p>
+                        <h3 id="projected-total" class="text-xl sm:text-3xl font-bold text-brand-700">$0</h3>
+                    </div>
+                </div>
+
+                <!-- 圖表區 -->
+                <div class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-100">
+                    <h3 class="text-base font-semibold text-slate-800 mb-4 border-b pb-2">資產配置比例</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <div class="flex flex-col items-center">
+                            <h4 class="text-sm font-medium text-slate-500 mb-2">目前配置</h4>
+                            <div class="relative w-full aspect-square max-w-[200px]">
+                                <canvas id="currentChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-center">
+                            <h4 class="text-sm font-medium text-brand-600 mb-2">加碼後模擬</h4>
+                            <div class="relative w-full aspect-square max-w-[200px]">
+                                <canvas id="projectedChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 詳細數據表格 -->
+                <div class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-100 overflow-hidden">
+                    <h3 class="text-base font-semibold text-slate-800 mb-4 border-b pb-2">比例變化明細</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-slate-500 bg-slate-50 uppercase whitespace-nowrap">
+                                <tr>
+                                    <th class="px-3 py-2 rounded-tl-lg">資產</th>
+                                    <th class="px-3 py-2 text-right">目前總值</th>
+                                    <th class="px-3 py-2 text-right">目前比例</th>
+                                    <th class="px-3 py-2 text-right text-brand-600">加碼後總值</th>
+                                    <th class="px-3 py-2 text-right text-brand-600">加碼後比例</th>
+                                    <th class="px-3 py-2 text-right rounded-tr-lg">比例變化</th>
+                                </tr>
+                            </thead>
+                            <tbody id="summary-table-body" class="divide-y divide-slate-100">
+                                <!-- JS 動態渲染表格內容 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // 核心狀態管理 (State)
+        const state = {
+            exchangeRate: 32.00,
+            assets: [
+                { id: 1, name: '基金', value: 150000, addOn: 0, currency: 'TWD', color: '#3b82f6' }, // Blue
+                { id: 2, name: '台股', value: 300000, addOn: 50000, currency: 'TWD', color: '#ef4444' }, // Red
+                { id: 3, name: '美股', value: 10000, addOn: 2000, currency: 'USD', color: '#10b981' }, // Green
+                { id: 4, name: '加密貨幣', value: 5000, addOn: 0, currency: 'USD', color: '#f59e0b' }   // Yellow
+            ],
+            nextId: 5
+        };
+
+        // 圖表實例
+        let currentChartInstance = null;
+        let projectedChartInstance = null;
+
+        // 格式化貨幣 (台幣無小數)
+        const formatCurrency = (num) => {
+            return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(num);
+        };
+
+        // 格式化百分比
+        const formatPercent = (num) => {
+            return (num * 100).toFixed(1) + '%';
+        };
+
+        // 取得即時匯率
+        async function fetchExchangeRate() {
+            try {
+                const btn = document.getElementById('refresh-rate');
+                btn.classList.add('animate-spin');
+                
+                // 使用免費且無需 API Key 的匯率 API
+                const res = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+                const data = await res.json();
+                
+                if (data && data.rates && data.rates.TWD) {
+                    state.exchangeRate = parseFloat(data.rates.TWD.toFixed(2));
+                    document.getElementById('exchange-rate').value = state.exchangeRate;
+                    updateDashboard(); // 更新計算
+                }
+                setTimeout(() => btn.classList.remove('animate-spin'), 500);
+            } catch (error) {
+                console.error("無法獲取匯率，使用預設值", error);
+                document.getElementById('refresh-rate').classList.remove('animate-spin');
+            }
+        }
+
+        // 渲染左側資產列表
+        function renderAssets() {
+            const listContainer = document.getElementById('asset-list');
+            listContainer.innerHTML = '';
+
+            state.assets.forEach(asset => {
+                const card = document.createElement('div');
+                card.className = "asset-item bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 transition-all hover:shadow-md";
+                card.dataset.id = asset.id;
+
+                card.innerHTML = `
+                    <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                        <!-- 第一區塊：拖曳把手、顏色與名稱 -->
+                        <div class="flex items-center gap-2 w-full sm:w-1/3">
+                            <div class="drag-handle cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 p-1 touch-none" title="按住拖曳排序">
+                                <i class="fa-solid fa-grip-vertical pointer-events-none"></i>
+                            </div>
+                            <div class="color-picker-wrapper shadow-sm flex-shrink-0">
+                                <input type="color" class="input-color" value="${asset.color}" title="更改顏色">
+                            </div>
+                            <input type="text" class="input-name flex-1 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-brand-500 focus:outline-none font-medium text-slate-800 text-base py-1 min-w-0" value="${asset.name}" placeholder="資產名稱">
+                        </div>
+
+                        <!-- 第二區塊：目前現值 -->
+                        <div class="flex items-center gap-2 w-full sm:w-1/3 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                            <select class="select-currency bg-transparent text-sm font-semibold text-slate-600 focus:outline-none cursor-pointer">
+                                <option value="TWD" ${asset.currency === 'TWD' ? 'selected' : ''}>TWD</option>
+                                <option value="USD" ${asset.currency === 'USD' ? 'selected' : ''}>USD</option>
+                            </select>
+                            <div class="flex-1 flex flex-col">
+                                <span class="text-[10px] text-slate-400 uppercase tracking-wider leading-none mb-1">目前現值</span>
+                                <input type="number" class="input-value w-full bg-transparent font-semibold text-slate-800 focus:outline-none" value="${asset.value}" placeholder="0" min="0">
+                            </div>
+                        </div>
+
+                        <!-- 第三區塊：加碼試算 -->
+                        <div class="flex items-center justify-between w-full sm:w-1/3 gap-2">
+                            <div class="flex-1 flex flex-col bg-brand-50 p-2 rounded-lg border border-brand-100">
+                                <span class="text-[10px] text-brand-500 uppercase tracking-wider leading-none mb-1">模擬加碼</span>
+                                <div class="flex items-center gap-1">
+                                    <span class="text-sm font-semibold text-brand-600">+</span>
+                                    <input type="number" class="input-addon w-full bg-transparent font-semibold text-brand-700 focus:outline-none" value="${asset.addOn}" placeholder="0" min="0">
+                                </div>
+                            </div>
+                            
+                            <!-- 刪除按鈕 -->
+                            <button class="btn-delete text-slate-300 hover:text-red-500 transition p-2" title="刪除此資產">
+                                <i class="fa-solid fa-trash pointer-events-none"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                listContainer.appendChild(card);
+            });
+        }
+
+        // 更新儀表板 (重新計算總和、更新圖表與表格)
+        function updateDashboard() {
+            let currentTotalTWD = 0;
+            let projectedTotalTWD = 0;
+
+            const chartLabels = [];
+            const chartColors = [];
+            const currentData = [];
+            const projectedData = [];
+            const tableData = [];
+
+            // 計算各項數值
+            state.assets.forEach(asset => {
+                const rate = asset.currency === 'USD' ? state.exchangeRate : 1;
+                const valueTWD = (asset.value || 0) * rate;
+                const addOnTWD = (asset.addOn || 0) * rate;
+                const projectedValueTWD = valueTWD + addOnTWD;
+
+                currentTotalTWD += valueTWD;
+                projectedTotalTWD += projectedValueTWD;
+
+                chartLabels.push(asset.name || '未命名');
+                chartColors.push(asset.color);
+                currentData.push(valueTWD);
+                projectedData.push(projectedValueTWD);
+
+                tableData.push({
+                    name: asset.name || '未命名',
+                    color: asset.color,
+                    currentVal: valueTWD,
+                    projectedVal: projectedValueTWD
+                });
+            });
+
+            // 更新總計文字
+            document.getElementById('current-total').innerText = formatCurrency(currentTotalTWD);
+            document.getElementById('projected-total').innerText = formatCurrency(projectedTotalTWD);
+
+            // 更新圖表
+            updateCharts(chartLabels, currentData, projectedData, chartColors);
+
+            // 更新表格
+            const tbody = document.getElementById('summary-table-body');
+            tbody.innerHTML = '';
+            
+            tableData.forEach(row => {
+                const currentPct = currentTotalTWD > 0 ? (row.currentVal / currentTotalTWD) : 0;
+                const projectedPct = projectedTotalTWD > 0 ? (row.projectedVal / projectedTotalTWD) : 0;
+                const diffPct = projectedPct - currentPct;
+                
+                let diffHtml = '-';
+                if (diffPct > 0.0001) {
+                    diffHtml = `<span class="text-brand-600 font-medium"><i class="fa-solid fa-arrow-up text-[10px]"></i> ${formatPercent(diffPct)}</span>`;
+                } else if (diffPct < -0.0001) {
+                    diffHtml = `<span class="text-red-500 font-medium"><i class="fa-solid fa-arrow-down text-[10px]"></i> ${formatPercent(Math.abs(diffPct))}</span>`;
+                } else {
+                    diffHtml = `<span class="text-slate-400">0.0%</span>`;
+                }
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50 transition whitespace-nowrap">
+                        <td class="px-3 py-3 flex items-center gap-2">
+                            <span class="w-3 h-3 min-w-[12px] rounded-full shadow-sm" style="background-color: ${row.color};"></span>
+                            <span class="font-medium text-slate-700">${row.name}</span>
+                        </td>
+                        <td class="px-3 py-3 text-right text-slate-600">${formatCurrency(row.currentVal)}</td>
+                        <td class="px-3 py-3 text-right text-slate-600">${formatPercent(currentPct)}</td>
+                        <td class="px-3 py-3 text-right font-semibold text-brand-700">${formatCurrency(row.projectedVal)}</td>
+                        <td class="px-3 py-3 text-right font-semibold text-brand-700">${formatPercent(projectedPct)}</td>
+                        <td class="px-3 py-3 text-right">${diffHtml}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        // 初始化與更新 Chart.js
+        function updateCharts(labels, currentData, projectedData, colors) {
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.label || '';
+                                if (label) { label += ': '; }
+                                if (context.parsed !== null) {
+                                    label += new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(context.parsed);
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                cutout: '65%',
+                borderWidth: 0
+            };
+
+            // 目前配置圖表
+            const ctxCurrent = document.getElementById('currentChart').getContext('2d');
+            if (currentChartInstance) {
+                currentChartInstance.data.labels = labels;
+                currentChartInstance.data.datasets[0].data = currentData;
+                currentChartInstance.data.datasets[0].backgroundColor = colors;
+                currentChartInstance.update();
+            } else {
+                currentChartInstance = new Chart(ctxCurrent, {
+                    type: 'doughnut',
+                    data: { labels: labels, datasets: [{ data: currentData, backgroundColor: colors }] },
+                    options: commonOptions
+                });
+            }
+
+            // 加碼後圖表
+            const ctxProjected = document.getElementById('projectedChart').getContext('2d');
+            if (projectedChartInstance) {
+                projectedChartInstance.data.labels = labels;
+                projectedChartInstance.data.datasets[0].data = projectedData;
+                projectedChartInstance.data.datasets[0].backgroundColor = colors;
+                projectedChartInstance.update();
+            } else {
+                projectedChartInstance = new Chart(ctxProjected, {
+                    type: 'doughnut',
+                    data: { labels: labels, datasets: [{ data: projectedData, backgroundColor: colors }] },
+                    options: commonOptions
+                });
+            }
+        }
+
+        // 設置事件監聽器
+        function setupEventListeners() {
+            // 匯率手動更改
+            document.getElementById('exchange-rate').addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val) && val > 0) {
+                    state.exchangeRate = val;
+                    updateDashboard();
+                }
+            });
+
+            // 匯率重新整理按鈕
+            document.getElementById('refresh-rate').addEventListener('click', fetchExchangeRate);
+
+            // 新增資產按鈕
+            document.getElementById('add-asset-btn').addEventListener('click', () => {
+                const randomColors = ['#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#64748b'];
+                const randomColor = randomColors[state.nextId % randomColors.length];
+                
+                state.assets.push({
+                    id: state.nextId++,
+                    name: '新資產',
+                    value: 0,
+                    addOn: 0,
+                    currency: 'TWD',
+                    color: randomColor
+                });
+                renderAssets();
+                updateDashboard();
+                
+                // 捲動到底部
+                document.getElementById('asset-list').lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+
+            // 使用事件代理 (Event Delegation) 處理資產列表內的各種輸入，避免畫面重繪導致失去焦點
+            document.getElementById('asset-list').addEventListener('input', (e) => {
+                const item = e.target.closest('.asset-item');
+                if (!item) return;
+                
+                const id = parseInt(item.dataset.id);
+                const asset = state.assets.find(a => a.id === id);
+                if (!asset) return;
+
+                if (e.target.classList.contains('input-name')) {
+                    asset.name = e.target.value;
+                } else if (e.target.classList.contains('input-value')) {
+                    asset.value = parseFloat(e.target.value) || 0;
+                } else if (e.target.classList.contains('input-addon')) {
+                    asset.addOn = parseFloat(e.target.value) || 0;
+                } else if (e.target.classList.contains('input-color')) {
+                    asset.color = e.target.value;
+                } else if (e.target.classList.contains('select-currency')) {
+                    asset.currency = e.target.value;
+                }
+                
+                updateDashboard(); // 只更新計算結果與圖表，不重新渲染輸入框
+            });
+
+            // 處理刪除按鈕 (Click 事件)
+            document.getElementById('asset-list').addEventListener('click', (e) => {
+                const deleteBtn = e.target.closest('.btn-delete');
+                if (deleteBtn) {
+                    const item = deleteBtn.closest('.asset-item');
+                    const id = parseInt(item.dataset.id);
+                    
+                    // 加上動畫後刪除
+                    item.classList.add('opacity-0', 'scale-95');
+                    setTimeout(() => {
+                        state.assets = state.assets.filter(a => a.id !== id);
+                        renderAssets();
+                        updateDashboard();
+                    }, 200);
+                }
+            });
+
+            // 實作拖曳排序功能 (使用 SortableJS)
+            const listContainer = document.getElementById('asset-list');
+            if (typeof Sortable !== 'undefined') {
+                new Sortable(listContainer, {
+                    handle: '.drag-handle', // 限制只有按住把手才能拖曳，避免影響輸入框
+                    animation: 150, // 拖曳時的動畫速度
+                    ghostClass: 'opacity-50', // 拖曳時的視覺半透明效果
+                    onEnd: function () {
+                        // 根據拖曳後的新 DOM 順序，重新排列 state.assets 陣列
+                        const currentOrderIds = Array.from(listContainer.querySelectorAll('.asset-item')).map(el => parseInt(el.dataset.id));
+                        state.assets.sort((a, b) => currentOrderIds.indexOf(a.id) - currentOrderIds.indexOf(b.id));
+                        
+                        // 更新右側圖表與表格的順序，使其與左側保持一致
+                        updateDashboard();
+                    }
+                });
+            }
+        }
+
+        // 初始化應用程式
+        window.onload = () => {
+            fetchExchangeRate(); // 嘗試抓取最新匯率，失敗則使用預設值
+            renderAssets();      // 渲染初始資產
+            updateDashboard();   // 初始計算
+            setupEventListeners(); // 綁定事件
+        };
+    </script>
+</body>
+</html>
